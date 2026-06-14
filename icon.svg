@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="110" fill="#1c1c1e"/>
+  <rect x="100" y="174" width="312" height="12" rx="6" fill="#2c2c2e"/>
+  <path d="M 130 186 Q 130 240 180 240 Q 230 240 230 186 Z" fill="#1c1c1e" stroke="#0a84ff" stroke-width="3"/>
+  <path d="M 282 186 Q 282 240 332 240 Q 382 240 382 186 Z" fill="#1c1c1e" stroke="#0a84ff" stroke-width="3"/>
+  <text x="180" y="230" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="28" font-weight="700" fill="#0a84ff">kg</text>
+  <text x="256" y="320" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="52" font-weight="700" fill="#ffffff" letter-spacing="-1">Gewicht</text>
+  <text x="256" y="360" text-anchor="middle" font-family="-apple-system, sans-serif" font-size="26" font-weight="500" fill="#636366" letter-spacing="1">TRACKER</text>
+</svg>

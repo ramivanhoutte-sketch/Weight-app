@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Gewicht">
+  <meta name="theme-color" content="#000000">
+  <title>Gewicht</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: #000; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+    #root { height: 100%; height: 100dvh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
+    input[type=number] { -moz-appearance: textfield; }
+    input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.6); }
+    ::-webkit-scrollbar { display: none; }
+    * { -webkit-font-smoothing: antialiased; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+<script>
+window.require = function(n) {
+  if (n === 'react') return window.React;
+  if (n === 'react-dom') return window.ReactDOM;
+  throw new Error('Unknown module: ' + n);
+};
+</script>
+
+<script>var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+// tmp/entry.tsx
+var entry_exports = {};
+__export(entry_exports, {
+  default: () => App
+});
+module.exports = __toCommonJS(entry_exports);
+var import_react = require("react");
+var KEY = "weight-tracker-v5";
+var OLD_KEY = "weight-tracker-v4";
+var SEED = [
+  { date: "2026-05-28", weight: 67.5 },
+  { date: "2026-05-29", weight: 68.2 }
+];
+function todayStr() {
+  return (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+}
+function loadState() {
+  try {
+    const s = localStorage.getItem(KEY);
+    if (s) return JSON.parse(s);
+    const old = localStorage.getItem(OLD_KEY);
+    if (old) {
+      const o = JSON.parse(old);
+      const state = {
+        entries: o.entries || [],
+        goal: { weight: o.goal?.weight ?? null, date: null }
+      };
+      localStorage.setItem(KEY, JSON.stringify(state));
+      localStorage.removeItem(OLD_KEY);
+      return state;
+    }
+  } catch (e) {
+  }
+  return { entries: SEED, goal: { weight: null, date: null } };
+}
+function saveState(state) {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(state));
+  } catch (e) {
+  }
+}
+function movingAvg(sorted, n = 7) {
+  return sorted.map((e, i) => {
+    const w = sorted.slice(Math.max(0, i - n + 1), i + 1);
+    const avg = w.reduce((s, v) => s + v.weight, 0) / w.length;
+    return { ...e, avg: +avg.toFixed(2) };
+  });
+}
+function weeklyRate(sorted) {
+  if (sorted.length < 8) return null;
+  const ma = movingAvg(sorted);
+  return +(ma[ma.length - 1].avg - ma[ma.length - 8].avg).toFixed(2);
+}
+function fmtDate(d) {
+  try {
+    return (/* @__PURE__ */ new Date(d + "T00:00:00")).toLocaleDateString("nl-BE", { day: "numeric", month: "short" });
+  } catch {
+    return d;
+  }
+}
+function daysUntil(d) {
+  const now = /* @__PURE__ */ new Date();
+  now.setHours(0, 0, 0, 0);
+  const t = /* @__PURE__ */ new Date(d + "T00:00:00");
+  return Math.round((t.getTime() - now.getTime()) / 864e5);
+}
+function ChartSVG({ entries, goal }) {
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  if (sorted.length === 0) return /* @__PURE__ */ React.createElement("div", { style: { padding: 40, textAlign: "center", color: "#636366", fontSize: 14 } }, "Nog geen data");
+  const W = 340, H = 200;
+  const pl = 44, pr = 24, pt = 14, pb = 28;
+  const cw = W - pl - pr, ch = H - pt - pb;
+  const n = sorted.length;
+  const ma = movingAvg(sorted);
+  const allW = sorted.map((e) => e.weight);
+  if (goal.weight) allW.push(goal.weight);
+  const mn = Math.min(...allW) - 0.5;
+  const mx = Math.max(...allW) + 0.5;
+  const range = mx - mn || 1;
+  const xp = (i) => pl + (n > 1 ? i / (n - 1) : 0.5) * cw;
+  const yp = (w) => pt + ch - (w - mn) / range * ch;
+  const rawD = sorted.map((e, i) => `${i === 0 ? "M" : "L"}${xp(i).toFixed(1)},${yp(e.weight).toFixed(1)}`).join(" ");
+  const maD = ma.map((e, i) => `${i === 0 ? "M" : "L"}${xp(i).toFixed(1)},${yp(e.avg).toFixed(1)}`).join(" ");
+  const ySpan = mx - mn;
+  const rawStep = ySpan / 4;
+  const niceStep = rawStep < 0.5 ? 0.25 : rawStep < 1 ? 0.5 : rawStep < 2 ? 1 : 2;
+  const ticks = [];
+  for (let v = Math.ceil(mn / niceStep) * niceStep; v <= mx + 0.01; v = +(v + niceStep).toFixed(2)) {
+    if (ticks.length < 8) ticks.push(+v.toFixed(2));
+  }
+  const xi = n === 1 ? [0] : n <= 4 ? sorted.map((_, i) => i) : [0, Math.floor(n / 3), Math.floor(2 * n / 3), n - 1];
+  const goalY = goal.weight ? yp(goal.weight) : null;
+  return /* @__PURE__ */ React.createElement("svg", { width: "100%", viewBox: `0 0 ${W} ${H}`, style: { overflow: "visible", display: "block" } }, ticks.map((t) => /* @__PURE__ */ React.createElement("g", { key: t }, /* @__PURE__ */ React.createElement("line", { x1: pl, y1: yp(t), x2: W - pr, y2: yp(t), stroke: "#2c2c2e", strokeWidth: "1" }), /* @__PURE__ */ React.createElement("text", { x: pl - 4, y: yp(t) + 3.5, textAnchor: "end", fontSize: "9", fill: "#636366" }, t))), goalY !== null && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("line", { x1: pl, y1: goalY, x2: W - pr, y2: goalY, stroke: "#30d158", strokeWidth: "1.5", strokeDasharray: "5,4" }), /* @__PURE__ */ React.createElement("text", { x: W - pr + 3, y: goalY + 3.5, fontSize: "8", fill: "#30d158" }, "doel")), /* @__PURE__ */ React.createElement("path", { d: rawD, fill: "none", stroke: "#48484a", strokeWidth: "1" }), /* @__PURE__ */ React.createElement("path", { d: maD, fill: "none", stroke: "#0a84ff", strokeWidth: "2", strokeLinecap: "round", strokeLinejoin: "round" }), sorted.map((e, i) => /* @__PURE__ */ React.createElement("circle", { key: e.date, cx: xp(i), cy: yp(e.weight), r: "2.5", fill: "#636366" })), n > 0 && /* @__PURE__ */ React.createElement("circle", { cx: xp(n - 1), cy: yp(ma[n - 1].avg), r: "4", fill: "#0a84ff" }), xi.map((i) => /* @__PURE__ */ React.createElement("text", { key: i, x: xp(i), y: H - 3, textAnchor: "middle", fontSize: "9", fill: "#636366" }, fmtDate(sorted[i].date))));
+}
+function App() {
+  const [tab, setTab] = (0, import_react.useState)("log");
+  const [entries, setEntries] = (0, import_react.useState)([]);
+  const [goal, setGoal] = (0, import_react.useState)({ weight: null, date: null });
+  const [logDate, setLogDate] = (0, import_react.useState)(todayStr());
+  const [logWeight, setLogWeight] = (0, import_react.useState)("");
+  const [logMsg, setLogMsg] = (0, import_react.useState)("");
+  const [gwInput, setGwInput] = (0, import_react.useState)("");
+  const [gdInput, setGdInput] = (0, import_react.useState)("");
+  const [goalMsg, setGoalMsg] = (0, import_react.useState)("");
+  const [delConfirm, setDelConfirm] = (0, import_react.useState)(null);
+  (0, import_react.useEffect)(() => {
+    const st = loadState();
+    setEntries(st.entries);
+    setGoal(st.goal);
+    if (st.goal.weight !== null) setGwInput(String(st.goal.weight));
+    if (st.goal.date) setGdInput(st.goal.date);
+  }, []);
+  const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+  const ma = movingAvg(sorted);
+  const currentMa = ma.length > 0 ? ma[ma.length - 1].avg : null;
+  const rate = weeklyRate(sorted);
+  const existing = entries.find((e) => e.date === logDate);
+  function logEntry() {
+    const w = parseFloat(logWeight.replace(",", "."));
+    if (!logWeight || isNaN(w) || w < 30 || w > 200) return;
+    const next = [...entries.filter((e) => e.date !== logDate), { date: logDate, weight: w }];
+    setEntries(next);
+    saveState({ entries: next, goal });
+    setLogWeight("");
+    setLogMsg(existing ? "Bijgewerkt \u2713" : "Opgeslagen \u2713");
+    setTimeout(() => setLogMsg(""), 2500);
+  }
+  function deleteEntry(date) {
+    if (delConfirm !== date) {
+      setDelConfirm(date);
+      setTimeout(() => setDelConfirm(null), 3e3);
+      return;
+    }
+    const next = entries.filter((e) => e.date !== date);
+    setEntries(next);
+    saveState({ entries: next, goal });
+    setDelConfirm(null);
+  }
+  function saveGoal() {
+    const wv = parseFloat(gwInput.replace(",", "."));
+    const w = gwInput && !isNaN(wv) ? +wv.toFixed(1) : null;
+    const d = gdInput || null;
+    const g = { weight: w, date: d };
+    setGoal(g);
+    saveState({ entries, goal: g });
+    setGoalMsg("Opgeslagen \u2713");
+    setTimeout(() => setGoalMsg(""), 2500);
+  }
+  const daysLeft = goal.date ? daysUntil(goal.date) : null;
+  const toGo = goal.weight !== null && currentMa !== null ? +(goal.weight - currentMa).toFixed(2) : null;
+  const rateNeeded = toGo !== null && daysLeft !== null && daysLeft > 0 ? +(toGo / daysLeft * 7).toFixed(2) : null;
+  let adviceText = "";
+  let adviceColor = "#636366";
+  if (rate !== null && rateNeeded !== null) {
+    if (rate >= rateNeeded * 0.85) {
+      adviceText = "\u2713 Op schema";
+      adviceColor = "#30d158";
+    } else if (rate >= rateNeeded * 0.5) {
+      adviceText = "\u26A0 Iets te langzaam, eet meer";
+      adviceColor = "#ffd60a";
+    } else {
+      adviceText = "\u2715 Te langzaam, verhoog calorie\xEBnn";
+      adviceColor = "#ff453a";
+    }
+  }
+  const blue = "#0a84ff";
+  const green = "#30d158";
+  const red = "#ff453a";
+  const muted = "#636366";
+  const sub = "rgba(235,235,245,0.6)";
+  const sep = "1px solid #38383a";
+  const card = { background: "#1c1c1e", borderRadius: 12, padding: 16, marginBottom: 10 };
+  const card2 = { background: "#2c2c2e", borderRadius: 10, padding: "10px 14px" };
+  const lbl = { fontSize: 12, fontWeight: 600, color: muted, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 7 };
+  const inp = { background: "#2c2c2e", border: "none", borderRadius: 10, padding: "13px 14px", color: "#fff", fontSize: 16, width: "100%", outline: "none", boxSizing: "border-box", WebkitAppearance: "none" };
+  const row = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 0", borderBottom: sep };
+  const rowLast = { ...row, borderBottom: "none" };
+  const btn = (color = blue) => ({ background: color, border: "none", borderRadius: 12, padding: "14px 0", color: "#fff", fontSize: 16, fontWeight: 600, width: "100%", cursor: "pointer", marginBottom: 8 });
+  const TABS = [
+    { k: "log", icon: "\u270F\uFE0F", label: "Log" },
+    { k: "chart", icon: "\u{1F4C8}", label: "Grafiek" },
+    { k: "history", icon: "\u{1F4CB}", label: "Histo" },
+    { k: "goals", icon: "\u{1F3AF}", label: "Doel" }
+  ];
+  return /* @__PURE__ */ React.createElement("div", { style: { background: "#000", minHeight: "100dvh", maxWidth: 390, margin: "0 auto", fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif', color: "#fff", paddingBottom: 90, paddingTop: "max(16px, env(safe-area-inset-top))" } }, /* @__PURE__ */ React.createElement("div", { style: { padding: "8px 20px 14px" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 30, fontWeight: 700, letterSpacing: -0.5 } }, "Gewicht"), currentMa !== null && /* @__PURE__ */ React.createElement("div", { style: { color: muted, fontSize: 13, marginTop: 2 } }, "7-daags gem.: ", /* @__PURE__ */ React.createElement("span", { style: { color: "#fff", fontWeight: 600 } }, currentMa, " kg"))), /* @__PURE__ */ React.createElement("div", { style: { padding: "0 16px" } }, tab === "log" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: card }, /* @__PURE__ */ React.createElement("div", { style: lbl }, "Datum"), /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      type: "date",
+      value: logDate,
+      max: todayStr(),
+      onChange: (e) => setLogDate(e.target.value),
+      style: { ...inp, marginBottom: 14, colorScheme: "dark" }
+    }
+  ), /* @__PURE__ */ React.createElement("div", { style: lbl }, "Gewicht (kg)", existing ? /* @__PURE__ */ React.createElement("span", { style: { color: "#ffd60a", fontWeight: 400, textTransform: "none", letterSpacing: 0, fontSize: 12 } }, "\xA0\u2014\xA0was ", existing.weight, " kg") : ""), /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      type: "number",
+      value: logWeight,
+      onChange: (e) => setLogWeight(e.target.value),
+      onKeyDown: (e) => e.key === "Enter" && logEntry(),
+      placeholder: existing ? String(existing.weight) : "bijv. 70.5",
+      step: "0.1",
+      min: "30",
+      max: "200",
+      style: inp
+    }
+  )), /* @__PURE__ */ React.createElement("button", { onClick: logEntry, style: btn() }, existing ? "Bijwerken" : "Opslaan"), logMsg && /* @__PURE__ */ React.createElement("div", { style: { textAlign: "center", color: green, fontSize: 14, marginBottom: 12 } }, logMsg), sorted.length > 0 && /* @__PURE__ */ React.createElement("div", { style: { background: "#1c1c1e", borderRadius: 12, padding: "4px 16px" } }, /* @__PURE__ */ React.createElement("div", { style: { ...lbl, padding: "10px 0 4px", marginBottom: 0 } }, "Recent"), [...sorted].reverse().slice(0, 4).map((e, i, arr) => /* @__PURE__ */ React.createElement("div", { key: e.date, style: i < arr.length - 1 ? row : rowLast }, /* @__PURE__ */ React.createElement("span", { style: { color: sub } }, fmtDate(e.date)), /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 600 } }, e.weight, " kg"))))), tab === "chart" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { background: "#1c1c1e", borderRadius: 12, padding: "16px 8px 12px", marginBottom: 10 } }, /* @__PURE__ */ React.createElement(ChartSVG, { entries, goal }), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 14, justifyContent: "center", marginTop: 10 } }, [
+    { stroke: blue, label: "7-daags gem.", dash: "" },
+    { stroke: "#636366", label: "Gemeten", dash: "" },
+    ...goal.weight ? [{ stroke: green, label: "Doel", dash: "5,4" }] : []
+  ].map(({ stroke, label, dash }) => /* @__PURE__ */ React.createElement("div", { key: label, style: { display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: muted } }, /* @__PURE__ */ React.createElement("svg", { width: "18", height: "6" }, /* @__PURE__ */ React.createElement("line", { x1: "0", y1: "3", x2: "18", y2: "3", stroke, strokeWidth: "2", strokeDasharray: dash || void 0 })), label)))), currentMa !== null && /* @__PURE__ */ React.createElement("div", { style: { background: "#1c1c1e", borderRadius: 12, padding: "4px 16px" } }, [
+    { label: "Huidig gem.", value: `${currentMa} kg`, color: "#fff" },
+    ...rate !== null ? [{ label: "Weekritme", value: `${rate > 0 ? "+" : ""}${rate} kg/week`, color: rate > 0 ? green : rate < 0 ? red : "#fff" }] : [],
+    ...rateNeeded !== null ? [{ label: "Nodig voor doel", value: `${rateNeeded > 0 ? "+" : ""}${rateNeeded} kg/week`, color: "#fff" }] : [],
+    ...toGo !== null && goal.weight ? [{ label: "Nog te gaan", value: `${toGo > 0 ? "+" : ""}${toGo} kg`, color: "#fff" }] : [],
+    ...daysLeft !== null ? [{ label: "Dagen tot doel", value: daysLeft > 0 ? `${daysLeft}d` : daysLeft === 0 ? "vandaag" : `${Math.abs(daysLeft)}d geleden`, color: daysLeft <= 7 && daysLeft >= 0 ? "#ffd60a" : "#fff" }] : []
+  ].map(({ label, value, color }, i, arr) => /* @__PURE__ */ React.createElement("div", { key: label, style: i < arr.length - 1 ? row : rowLast }, /* @__PURE__ */ React.createElement("span", { style: { color: muted } }, label), /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 600, color } }, value))), adviceText && /* @__PURE__ */ React.createElement("div", { style: { margin: "8px 0", ...card2, fontSize: 14, fontWeight: 600, color: adviceColor, textAlign: "center" } }, adviceText))), tab === "history" && /* @__PURE__ */ React.createElement("div", { style: { background: "#1c1c1e", borderRadius: 12, padding: "4px 16px" } }, /* @__PURE__ */ React.createElement("div", { style: { ...lbl, padding: "10px 0 4px", marginBottom: 0 } }, "Alle metingen (", entries.length, ")"), [...sorted].reverse().map((e, i, arr) => /* @__PURE__ */ React.createElement("div", { key: e.date, style: i < arr.length - 1 ? row : rowLast }, /* @__PURE__ */ React.createElement("span", { style: { color: sub } }, fmtDate(e.date)), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10 } }, /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 600 } }, e.weight, " kg"), /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      onClick: () => deleteEntry(e.date),
+      style: { background: delConfirm === e.date ? red : "transparent", border: `1px solid ${delConfirm === e.date ? red : "#48484a"}`, borderRadius: 6, color: delConfirm === e.date ? "#fff" : red, fontSize: 12, padding: "3px 8px", cursor: "pointer", transition: "all 0.15s" }
+    },
+    delConfirm === e.date ? "Zeker?" : "\u2715"
+  )))), entries.length === 0 && /* @__PURE__ */ React.createElement("div", { style: { color: muted, textAlign: "center", padding: "24px 0" } }, "Geen metingen")), tab === "goals" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: card }, /* @__PURE__ */ React.createElement("div", { style: lbl }, "Doelgewicht (kg)"), /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      type: "number",
+      value: gwInput,
+      onChange: (e) => setGwInput(e.target.value),
+      placeholder: "bijv. 75",
+      step: "0.1",
+      min: "30",
+      max: "200",
+      style: { ...inp, marginBottom: 14 }
+    }
+  ), /* @__PURE__ */ React.createElement("div", { style: lbl }, "Doeldatum"), /* @__PURE__ */ React.createElement(
+    "input",
+    {
+      type: "date",
+      value: gdInput,
+      onChange: (e) => setGdInput(e.target.value),
+      style: { ...inp, colorScheme: "dark" }
+    }
+  )), /* @__PURE__ */ React.createElement("button", { onClick: saveGoal, style: btn() }, "Opslaan"), goalMsg && /* @__PURE__ */ React.createElement("div", { style: { textAlign: "center", color: green, fontSize: 14, marginBottom: 12 } }, goalMsg), (goal.weight !== null || goal.date) && /* @__PURE__ */ React.createElement("div", { style: { background: "#1c1c1e", borderRadius: 12, padding: "4px 16px" } }, /* @__PURE__ */ React.createElement("div", { style: { ...lbl, padding: "10px 0 4px", marginBottom: 0 } }, "Huidig doel"), goal.weight !== null && /* @__PURE__ */ React.createElement("div", { style: goal.date || toGo !== null ? row : rowLast }, /* @__PURE__ */ React.createElement("span", { style: { color: sub } }, "Doelgewicht"), /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 600 } }, goal.weight, " kg")), goal.date && /* @__PURE__ */ React.createElement("div", { style: toGo !== null ? row : rowLast }, /* @__PURE__ */ React.createElement("span", { style: { color: sub } }, "Datum"), /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 600 } }, fmtDate(goal.date), daysLeft !== null && /* @__PURE__ */ React.createElement("span", { style: { color: muted, fontWeight: 400, fontSize: 13 } }, " ", "(", daysLeft > 0 ? `${daysLeft}d` : daysLeft === 0 ? "vandaag" : `${Math.abs(daysLeft)}d geleden`, ")"))), toGo !== null && goal.weight !== null && /* @__PURE__ */ React.createElement("div", { style: rowLast }, /* @__PURE__ */ React.createElement("span", { style: { color: sub } }, "Nog te gaan"), /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 600, color: Math.abs(toGo) < 0.3 ? green : "#fff" } }, toGo > 0 ? "+" : "", toGo, " kg"))))), /* @__PURE__ */ React.createElement("div", { style: { position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 390, background: "rgba(28,28,30,0.94)", backdropFilter: "blur(20px)", borderTop: sep, display: "flex", paddingBottom: "max(16px, env(safe-area-inset-bottom))" } }, TABS.map((t) => /* @__PURE__ */ React.createElement(
+    "button",
+    {
+      key: t.k,
+      onClick: () => setTab(t.k),
+      style: { flex: 1, padding: "8px 0 2px", background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }
+    },
+    /* @__PURE__ */ React.createElement("span", { style: { fontSize: 20, opacity: tab === t.k ? 1 : 0.4 } }, t.icon),
+    /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, fontWeight: tab === t.k ? 600 : 400, color: tab === t.k ? blue : muted } }, t.label)
+  ))));
+}
+</script>
+<script>
+  ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App.default));
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('./sw.js').catch(function(){});
+    });
+  }
+</script>
+</body>
+</html>
