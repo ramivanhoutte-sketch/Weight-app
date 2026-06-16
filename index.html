@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Gewicht">
+  <meta name="theme-color" content="#000000">
+  <title>Gewicht</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: #000; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+    #root { height: 100%; height: 100dvh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
+    input[type=number] { -moz-appearance: textfield; }
+    input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.6); }
+    ::-webkit-scrollbar { display: none; }
+    * { -webkit-font-smoothing: antialiased; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+<script>
+window.require = function(n) {
+  if (n === 'react') return window.React;
+  if (n === 'react-dom') return window.ReactDOM;
+  throw new Error('Unknown: ' + n);
+};
+</script>
+<script>
+var WeightApp = (() => {
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
+    get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
+  }) : x)(function(x) {
+    if (typeof require !== "undefined") return require.apply(this, arguments);
+    throw Error('Dynamic require of "' + x + '" is not supported');
+  });
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
+  };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+  // tmp/entry.tsx
+  var entry_exports = {};
+  __export(entry_exports, {
+    default: () => App
+  });
+  var import_react = __require("react");
+  var KEY = "weight-tracker-v5";
+  var OLD_KEY = "weight-tracker-v4";
+  var SEED = [
+    { date: "2026-05-28", weight: 67.5 },
+    { date: "2026-05-29", weight: 68.2 }
+  ];
+  var DEFAULT_GOAL = { weight: null, date: null, goalRate: 300 };
+  function todayStr() {
+    return (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+  }
+  function loadState() {
+    try {
+      const s = localStorage.getItem(KEY);
+      if (s) {
+        const p = JSON.parse(s);
+        if (!p.goal?.goalRate) p.goal = { ...DEFAULT_GOAL, ...p.goal };
+        return p;
+      }
+      const old = localStorage.getItem(OLD_KEY);
+      if (old) {
+        const o = JSON.parse(old);
+        const st = { entries: o.entries || [], goal: { ...DEFAULT_GOAL, weight: o.goal?.weight ?? null } };
+        localStorage.setItem(KEY, JSON.stringify(st));
+        localStorage.removeItem(OLD_KEY);
+        return st;
+      }
+    } catch (e) {
+    }
+    return { entries: SEED, goal: DEFAULT_GOAL };
+  }
+  function saveState(s) {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(s));
+    } catch (e) {
+    }
+  }
+  function rollingAvg(sorted, w = 7) {
+    return sorted.map((e, i) => {
+      const slice = sorted.slice(Math.max(0, i - w + 1), i + 1);
+      return { ...e, avg: +(slice.reduce((s, v) => s + v.weight, 0) / slice.length).toFixed(3) };
+    });
+  }
+  function regression(rolling, n = 21) {
+    const data = rolling.slice(-n);
+    if (data.length < 5) return null;
+    const t0 = (/* @__PURE__ */ new Date(data[0].date + "T00:00:00")).getTime();
+    const pts = data.map((e) => ({ x: ((/* @__PURE__ */ new Date(e.date + "T00:00:00")).getTime() - t0) / 864e5, y: e.avg }));
+    const len = pts.length;
+    const sx = pts.reduce((s, p) => s + p.x, 0), sy = pts.reduce((s, p) => s + p.y, 0);
+    const sxy = pts.reduce((s, p) => s + p.x * p.y, 0), sx2 = pts.reduce((s, p) => s + p.x * p.x, 0);
+    const denom = len * sx2 - sx * sx;
+    return denom === 0 ? null : Math.round((len * sxy - sx * sy) / denom * 7 * 1e3);
+  }
+  function gain(rolling, daysAgo) {
+    if (rolling.length < 2) return null;
+    const cur = rolling[rolling.length - 1];
+    const target = (/* @__PURE__ */ new Date(cur.date + "T00:00:00")).getTime() - daysAgo * 864e5;
+    let best = null, bestDiff = Infinity;
+    for (const e of rolling) {
+      const d = Math.abs((/* @__PURE__ */ new Date(e.date + "T00:00:00")).getTime() - target);
+      if (d < bestDiff && e.date !== cur.date) {
+        bestDiff = d;
+        best = e;
+      }
+    }
+    return best ? Math.round((cur.avg - best.avg) * 1e3) : null;
+  }
+  function rateStatus(trend, goalRate) {
+    if (trend === null) return null;
+    const diff = trend - goalRate;
+    if (diff < -150) return { text: "Onder schema", color: "#ff453a", icon: "\u2193\u2193" };
+    if (diff < 150) return { text: "Op schema", color: "#30d158", icon: "\u2713" };
+    if (diff < 300) return { text: "Licht boven", color: "#ff9f0a", icon: "\u2191" };
+    return { text: "Te snel", color: "#ff453a", icon: "\u2191\u2191" };
+  }
+  function fmtShort(d) {
+    try {
+      return (/* @__PURE__ */ new Date(d + "T00:00:00")).toLocaleDateString("nl-BE", { day: "numeric", month: "short" });
+    } catch {
+      return d;
+    }
+  }
+  function fmtLong(d) {
+    try {
+      return (/* @__PURE__ */ new Date(d + "T00:00:00")).toLocaleDateString("nl-BE", { weekday: "long", day: "numeric", month: "long" });
+    } catch {
+      return d;
+    }
+  }
+  function capitalize(s) {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  function daysUntil(d) {
+    const now = /* @__PURE__ */ new Date();
+    now.setHours(0, 0, 0, 0);
+    return Math.round(((/* @__PURE__ */ new Date(d + "T00:00:00")).getTime() - now.getTime()) / 864e5);
+  }
+  function IconToday() {
+    return /* @__PURE__ */ React.createElement("svg", { width: "22", height: "22", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round", strokeLinejoin: "round" }, /* @__PURE__ */ React.createElement("circle", { cx: "12", cy: "12", r: "10" }), /* @__PURE__ */ React.createElement("polyline", { points: "12 6 12 12 16 14" }));
+  }
+  function IconChart() {
+    return /* @__PURE__ */ React.createElement("svg", { width: "22", height: "22", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round", strokeLinejoin: "round" }, /* @__PURE__ */ React.createElement("polyline", { points: "22 12 18 12 15 21 9 3 6 12 2 12" }));
+  }
+  function IconList() {
+    return /* @__PURE__ */ React.createElement("svg", { width: "22", height: "22", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round", strokeLinejoin: "round" }, /* @__PURE__ */ React.createElement("line", { x1: "8", y1: "6", x2: "21", y2: "6" }), /* @__PURE__ */ React.createElement("line", { x1: "8", y1: "12", x2: "21", y2: "12" }), /* @__PURE__ */ React.createElement("line", { x1: "8", y1: "18", x2: "21", y2: "18" }), /* @__PURE__ */ React.createElement("line", { x1: "3", y1: "6", x2: "3.01", y2: "6" }), /* @__PURE__ */ React.createElement("line", { x1: "3", y1: "12", x2: "3.01", y2: "12" }), /* @__PURE__ */ React.createElement("line", { x1: "3", y1: "18", x2: "3.01", y2: "18" }));
+  }
+  function IconTarget() {
+    return /* @__PURE__ */ React.createElement("svg", { width: "22", height: "22", viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round", strokeLinejoin: "round" }, /* @__PURE__ */ React.createElement("circle", { cx: "12", cy: "12", r: "10" }), /* @__PURE__ */ React.createElement("circle", { cx: "12", cy: "12", r: "6" }), /* @__PURE__ */ React.createElement("circle", { cx: "12", cy: "12", r: "2" }));
+  }
+  function ChartView({ entries, goal }) {
+    const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+    if (sorted.length === 0) return /* @__PURE__ */ React.createElement("div", { style: { padding: 48, textAlign: "center", color: "#48484a", fontSize: 14 } }, "Geen data");
+    const ra = rollingAvg(sorted);
+    const W = 340, H = 190, pl = 46, pr = 20, pt = 16, pb = 30;
+    const cw = W - pl - pr, ch = H - pt - pb, n = sorted.length;
+    const allW = [...sorted.map((e) => e.weight), ...ra.map((e) => e.avg)];
+    if (goal.weight) allW.push(goal.weight);
+    const mn = Math.min(...allW) - 0.4, mx = Math.max(...allW) + 0.4, rng = mx - mn || 1;
+    const xp = (i) => pl + (n > 1 ? i / (n - 1) : 0.5) * cw;
+    const yp = (w) => pt + ch - (w - mn) / rng * ch;
+    const rawD = sorted.map((e, i) => `${i === 0 ? "M" : "L"}${xp(i).toFixed(1)},${yp(e.weight).toFixed(1)}`).join(" ");
+    const maD = ra.map((e, i) => `${i === 0 ? "M" : "L"}${xp(i).toFixed(1)},${yp(e.avg).toFixed(1)}`).join(" ");
+    const span = mx - mn;
+    const step = span < 2 ? 0.5 : span < 4 ? 1 : 2;
+    const ticks = [];
+    for (let v = Math.ceil(mn / step) * step; v <= mx + 0.01 && ticks.length < 7; v = +(v + step).toFixed(1)) ticks.push(v);
+    const xi = n <= 4 ? sorted.map((_, i) => i) : [0, Math.floor(n / 3), Math.floor(2 * n / 3), n - 1];
+    const gY = goal.weight ? yp(goal.weight) : null;
+    return /* @__PURE__ */ React.createElement("svg", { width: "100%", viewBox: `0 0 ${W} ${H}`, style: { display: "block", overflow: "visible" } }, ticks.map((t) => /* @__PURE__ */ React.createElement("g", { key: t }, /* @__PURE__ */ React.createElement("line", { x1: pl, y1: yp(t), x2: W - pr, y2: yp(t), stroke: "#2c2c2e", strokeWidth: "1" }), /* @__PURE__ */ React.createElement("text", { x: pl - 5, y: yp(t) + 3.5, textAnchor: "end", fontSize: "8.5", fill: "#48484a" }, t))), gY !== null && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("line", { x1: pl, y1: gY, x2: W - pr, y2: gY, stroke: "#30d158", strokeWidth: "1.5", strokeDasharray: "4,4", opacity: "0.7" }), /* @__PURE__ */ React.createElement("text", { x: W - pr + 3, y: gY + 3.5, fontSize: "8", fill: "#30d158", opacity: "0.8" }, "doel")), /* @__PURE__ */ React.createElement("path", { d: rawD, fill: "none", stroke: "#3a3a3c", strokeWidth: "1.5" }), /* @__PURE__ */ React.createElement("path", { d: maD, fill: "none", stroke: "#0a84ff", strokeWidth: "2.5", strokeLinecap: "round", strokeLinejoin: "round" }), sorted.map((e, i) => /* @__PURE__ */ React.createElement("circle", { key: e.date, cx: xp(i), cy: yp(e.weight), r: "2.5", fill: "#48484a" })), n > 0 && /* @__PURE__ */ React.createElement("circle", { cx: xp(n - 1), cy: yp(ra[n - 1].avg), r: "5", fill: "#0a84ff", stroke: "#000", strokeWidth: "2" }), xi.map((i) => /* @__PURE__ */ React.createElement("text", { key: i, x: xp(i), y: H - 2, textAnchor: "middle", fontSize: "8.5", fill: "#48484a" }, fmtShort(sorted[i].date))));
+  }
+  function App() {
+    const [tab, setTab] = (0, import_react.useState)("log");
+    const [entries, setEntries] = (0, import_react.useState)([]);
+    const [goal, setGoal] = (0, import_react.useState)(DEFAULT_GOAL);
+    const [logDate, setLogDate] = (0, import_react.useState)(todayStr());
+    const [logWeight, setLogWeight] = (0, import_react.useState)("");
+    const [logMsg, setLogMsg] = (0, import_react.useState)("");
+    const [showDP, setShowDP] = (0, import_react.useState)(false);
+    const [gwIn, setGwIn] = (0, import_react.useState)(""), [gdIn, setGdIn] = (0, import_react.useState)(""), [grIn, setGrIn] = (0, import_react.useState)("300");
+    const [goalMsg, setGoalMsg] = (0, import_react.useState)("");
+    const [delConfirm, setDelConfirm] = (0, import_react.useState)(null);
+    (0, import_react.useEffect)(() => {
+      const st = loadState();
+      setEntries(st.entries);
+      setGoal(st.goal);
+      if (st.goal.weight !== null) setGwIn(String(st.goal.weight));
+      if (st.goal.date) setGdIn(st.goal.date);
+      setGrIn(String(st.goal.goalRate ?? 300));
+    }, []);
+    const sorted = [...entries].sort((a, b) => a.date.localeCompare(b.date));
+    const ra = rollingAvg(sorted);
+    const curMa = ra.length > 0 ? ra[ra.length - 1].avg : null;
+    const trend = regression(ra);
+    const g7 = gain(ra, 7), g30 = gain(ra, 30);
+    const status = rateStatus(trend, goal.goalRate);
+    const existing = entries.find((e) => e.date === logDate);
+    const daysLeft = goal.date ? daysUntil(goal.date) : null;
+    const toGo = goal.weight !== null && curMa !== null ? +(goal.weight - curMa).toFixed(2) : null;
+    const needRate = toGo !== null && daysLeft !== null && daysLeft > 0 ? Math.round(toGo / daysLeft * 7 * 1e3) : null;
+    function doLog() {
+      const w = parseFloat(logWeight.replace(",", "."));
+      if (!logWeight || isNaN(w) || w < 30 || w > 200) return;
+      const next = [...entries.filter((e) => e.date !== logDate), { date: logDate, weight: w }];
+      setEntries(next);
+      saveState({ entries: next, goal });
+      setLogWeight("");
+      setShowDP(false);
+      setLogDate(todayStr());
+      setLogMsg(existing ? "Bijgewerkt \u2713" : "Opgeslagen \u2713");
+      setTimeout(() => setLogMsg(""), 2e3);
+    }
+    function doDelete(date) {
+      if (delConfirm !== date) {
+        setDelConfirm(date);
+        setTimeout(() => setDelConfirm(null), 3e3);
+        return;
+      }
+      const next = entries.filter((e) => e.date !== date);
+      setEntries(next);
+      saveState({ entries: next, goal });
+      setDelConfirm(null);
+    }
+    function doSaveGoal() {
+      const wv = parseFloat(gwIn.replace(",", "."));
+      const g = { weight: gwIn && !isNaN(wv) ? +wv.toFixed(1) : null, date: gdIn || null, goalRate: parseInt(grIn) || 300 };
+      setGoal(g);
+      saveState({ entries, goal: g });
+      setGoalMsg("Opgeslagen \u2713");
+      setTimeout(() => setGoalMsg(""), 2e3);
+    }
+    const C = { blue: "#0a84ff", green: "#30d158", red: "#ff453a", orange: "#ff9f0a", yellow: "#ffd60a", purple: "#bf5af2", bg: "#000", card: "#1c1c1e", card2: "#2c2c2e", sep: "#2c2c2e", muted: "#636366", sub: "rgba(235,235,245,0.55)" };
+    const sep1 = `1px solid ${C.sep}`;
+    const inp = { background: C.card2, border: "none", borderRadius: 12, padding: "14px 16px", color: "#fff", fontSize: 17, width: "100%", outline: "none", boxSizing: "border-box", WebkitAppearance: "none" };
+    const row = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "13px 0", borderBottom: sep1 };
+    const rowL = { ...row, borderBottom: "none" };
+    const sectionLbl = { fontSize: 12, fontWeight: 600, color: C.muted, textTransform: "uppercase", letterSpacing: 0.9, marginBottom: 10 };
+    const fmtG = (g) => g === null ? "\u2014" : `${g > 0 ? "+" : ""}${g} g`;
+    const gColor = (g) => g === null ? C.muted : g > 0 ? C.green : g < 0 ? C.red : "#fff";
+    const TABS = [
+      { k: "log", label: "Vandaag", Icon: IconToday },
+      { k: "chart", label: "Grafiek", Icon: IconChart },
+      { k: "history", label: "Historie", Icon: IconList },
+      { k: "goals", label: "Doel", Icon: IconTarget }
+    ];
+    return /* @__PURE__ */ React.createElement("div", { style: { background: C.bg, minHeight: "100dvh", maxWidth: 390, margin: "0 auto", fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif', color: "#fff", paddingBottom: 88, paddingTop: "max(16px, env(safe-area-inset-top))" } }, /* @__PURE__ */ React.createElement("div", { style: { padding: "10px 22px 16px" } }, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 13, color: C.muted, fontWeight: 500, marginBottom: 3, letterSpacing: 0.2 } }, capitalize(fmtLong(todayStr()))), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 34, fontWeight: 700, letterSpacing: -0.8, lineHeight: 1.1 } }, "Gewicht")), /* @__PURE__ */ React.createElement("div", { style: { padding: "0 16px" } }, tab === "log" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { background: C.card, borderRadius: 20, padding: "20px 22px", marginBottom: 12 } }, /* @__PURE__ */ React.createElement("div", { style: sectionLbl }, "7-daags gemiddelde"), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "baseline", gap: 8, marginBottom: 14 } }, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 52, fontWeight: 700, letterSpacing: -2, lineHeight: 1 } }, curMa !== null ? curMa.toFixed(2) : "\u2014"), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 22, color: C.muted, fontWeight: 500, letterSpacing: -0.5 } }, "kg")), trend !== null ? /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 10 } }, /* @__PURE__ */ React.createElement("span", { style: { background: trend > 0 ? "rgba(48,209,88,0.15)" : "rgba(255,69,58,0.15)", color: trend > 0 ? C.green : C.red, fontSize: 13, fontWeight: 700, padding: "5px 12px", borderRadius: 20, letterSpacing: 0.2 } }, trend > 0 ? "+" : "", trend, " g/week"), /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: C.muted } }, "regressie trend")) : /* @__PURE__ */ React.createElement("span", { style: { fontSize: 12, color: C.muted } }, "min. 5 metingen voor trend")), /* @__PURE__ */ React.createElement("div", { style: { background: C.card, borderRadius: 20, padding: "16px 18px", marginBottom: 12 } }, /* @__PURE__ */ React.createElement("div", { style: { ...sectionLbl, marginBottom: 12 } }, "Log gewicht", existing && logDate === todayStr() && /* @__PURE__ */ React.createElement("span", { style: { color: C.yellow, fontWeight: 400, textTransform: "none", letterSpacing: 0 } }, " \u2014 was ", existing.weight, " kg")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 10 } }, /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        type: "number",
+        value: logWeight,
+        onChange: (e) => setLogWeight(e.target.value),
+        onKeyDown: (e) => e.key === "Enter" && doLog(),
+        placeholder: existing && logDate === todayStr() ? String(existing.weight) : "0.0",
+        step: "0.1",
+        min: "30",
+        max: "200",
+        style: { ...inp, flex: 1, fontSize: 22, fontWeight: 600, padding: "13px 16px" }
+      }
+    ), /* @__PURE__ */ React.createElement("button", { onClick: doLog, style: { background: C.blue, border: "none", borderRadius: 12, width: 66, color: "#fff", fontSize: 16, fontWeight: 700, cursor: "pointer", flexShrink: 0 } }, "OK")), showDP && /* @__PURE__ */ React.createElement("div", { style: { marginTop: 12 } }, /* @__PURE__ */ React.createElement("div", { style: { ...sectionLbl, marginBottom: 8 } }, "Datum"), /* @__PURE__ */ React.createElement(
+      "input",
+      {
+        type: "date",
+        value: logDate,
+        max: todayStr(),
+        onChange: (e) => setLogDate(e.target.value),
+        style: { ...inp, colorScheme: "dark" }
+      }
+    ), existing && logDate !== todayStr() && /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: C.yellow, marginTop: 6 } }, "Overschrijft ", fmtShort(logDate), ": ", existing.weight, " kg")), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10 } }, /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        onClick: () => {
+          setShowDP(!showDP);
+          if (showDP) setLogDate(todayStr());
+        },
+        style: { background: "none", border: "none", color: C.blue, fontSize: 13, padding: 0, cursor: "pointer", fontWeight: 500 }
+      },
+      showDP ? "Verberg datumkiezer" : "+ Andere datum"
+    ), logMsg && /* @__PURE__ */ React.createElement("span", { style: { color: C.green, fontSize: 13, fontWeight: 600 } }, logMsg))), /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 } }, [
+      { lbl: "Afg. 7 dagen", val: fmtG(g7), color: gColor(g7), sub: "7d gem. verandering" },
+      { lbl: "Afg. maand", val: fmtG(g30), color: gColor(g30), sub: "30d gem. verandering" }
+    ].map((c) => /* @__PURE__ */ React.createElement("div", { key: c.lbl, style: { background: C.card, borderRadius: 20, padding: "16px 18px" } }, /* @__PURE__ */ React.createElement("div", { style: sectionLbl }, c.lbl), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 28, fontWeight: 700, letterSpacing: -0.5, color: c.color, marginBottom: 4 } }, c.val), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: C.muted } }, c.sub))), /* @__PURE__ */ React.createElement("div", { style: { background: C.card, borderRadius: 20, padding: "16px 18px" } }, /* @__PURE__ */ React.createElement("div", { style: sectionLbl }, "Rate doel"), status ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 15, fontWeight: 700, color: status.color, marginBottom: 4 } }, status.icon, " ", status.text), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: C.muted } }, "Doel +", goal.goalRate, " g/w")) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 22, fontWeight: 700, color: C.muted, marginBottom: 4 } }, "\\u2014"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: C.muted } }, "min. 5 metingen"))), /* @__PURE__ */ React.createElement("div", { style: { background: C.card, borderRadius: 20, padding: "16px 18px" } }, /* @__PURE__ */ React.createElement("div", { style: sectionLbl }, "Metingen"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 36, fontWeight: 700, letterSpacing: -1, marginBottom: 4 } }, entries.length), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: C.muted } }, "totaal"))), goal.weight !== null && curMa !== null && /* @__PURE__ */ React.createElement("div", { style: { background: C.card, borderRadius: 20, padding: "16px 18px", marginBottom: 12 } }, /* @__PURE__ */ React.createElement("div", { style: sectionLbl }, "Voortgang"), /* @__PURE__ */ React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 } }, /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 4 } }, "Nog te gaan"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 22, fontWeight: 700, letterSpacing: -0.5 } }, toGo !== null ? `${toGo > 0 ? "+" : ""}${toGo}` : "\u2014", /* @__PURE__ */ React.createElement("span", { style: { fontSize: 13, color: C.muted } }, " kg"))), daysLeft !== null && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 4 } }, "Dagen over"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 22, fontWeight: 700, letterSpacing: -0.5, color: daysLeft <= 7 ? C.yellow : "#fff" } }, Math.max(0, daysLeft))), needRate !== null && /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement("div", { style: { fontSize: 11, color: C.muted, marginBottom: 4 } }, "Nodig"), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 18, fontWeight: 700, color: C.orange } }, needRate > 0 ? "+" : "", needRate, /* @__PURE__ */ React.createElement("span", { style: { fontSize: 11, color: C.muted } }, " g/w")))))), tab === "chart" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { background: C.card, borderRadius: 20, padding: "18px 10px 14px", marginBottom: 12 } }, /* @__PURE__ */ React.createElement(ChartView, { entries, goal }), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", gap: 16, justifyContent: "center", marginTop: 12 } }, [{ s: C.blue, l: "7d gemiddelde", d: "" }, { s: "#48484a", l: "Meting", d: "" }, ...goal.weight ? [{ s: C.green, l: "Doel", d: "4,4" }] : []].map(({ s, l, d }) => /* @__PURE__ */ React.createElement("div", { key: l, style: { display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: C.muted } }, /* @__PURE__ */ React.createElement("svg", { width: "16", height: "5" }, /* @__PURE__ */ React.createElement("line", { x1: "0", y1: "2.5", x2: "16", y2: "2.5", stroke: s, strokeWidth: "2", strokeDasharray: d || void 0 })), l)))), /* @__PURE__ */ React.createElement("div", { style: { background: C.card, borderRadius: 20, padding: "6px 18px" } }, [
+      { l: "7-daags gemiddelde", v: curMa !== null ? `${curMa.toFixed(2)} kg` : "\u2014", c: C.blue },
+      { l: "Regressie trend", v: trend !== null ? `${trend > 0 ? "+" : ""}${trend} g/week` : "\u2014", c: trend !== null ? trend > 0 ? C.green : C.red : C.muted },
+      { l: "Afg. 7 dagen", v: fmtG(g7), c: gColor(g7) },
+      { l: "Afg. 30 dagen", v: fmtG(g30), c: gColor(g30) }
+    ].map(({ l, v, c }, i, arr) => /* @__PURE__ */ React.createElement("div", { key: l, style: i < arr.length - 1 ? row : rowL }, /* @__PURE__ */ React.createElement("span", { style: { color: C.sub, fontSize: 15 } }, l), /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 600, color: c, fontSize: 15 } }, v))))), tab === "history" && /* @__PURE__ */ React.createElement("div", { style: { background: C.card, borderRadius: 20, padding: "6px 18px" } }, /* @__PURE__ */ React.createElement("div", { style: { ...sectionLbl, padding: "14px 0 6px", marginBottom: 0 } }, "Alle metingen (", entries.length, ")"), [...sorted].reverse().map((e, i, arr) => /* @__PURE__ */ React.createElement("div", { key: e.date, style: i < arr.length - 1 ? row : rowL }, /* @__PURE__ */ React.createElement("span", { style: { color: C.sub, fontSize: 15 } }, fmtShort(e.date)), /* @__PURE__ */ React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } }, /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 600, fontSize: 15 } }, e.weight, " kg"), /* @__PURE__ */ React.createElement("button", { onClick: () => doDelete(e.date), style: { background: delConfirm === e.date ? C.red : "transparent", border: `1.5px solid ${delConfirm === e.date ? C.red : "#3a3a3c"}`, borderRadius: 8, color: delConfirm === e.date ? "#fff" : C.red, fontSize: 12, fontWeight: 600, padding: "4px 10px", cursor: "pointer" } }, delConfirm === e.date ? "Zeker?" : "\u2715")))), entries.length === 0 && /* @__PURE__ */ React.createElement("div", { style: { color: C.muted, textAlign: "center", padding: "32px 0", fontSize: 14 } }, "Geen metingen")), tab === "goals" && /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { style: { background: C.card, borderRadius: 20, padding: 18, marginBottom: 12 } }, /* @__PURE__ */ React.createElement("div", { style: { ...sectionLbl, marginBottom: 10 } }, "Doelgewicht (kg)"), /* @__PURE__ */ React.createElement("input", { type: "number", value: gwIn, onChange: (e) => setGwIn(e.target.value), placeholder: "bijv. 75", step: "0.1", style: { ...inp, marginBottom: 14 } }), /* @__PURE__ */ React.createElement("div", { style: { ...sectionLbl, marginBottom: 10 } }, "Doeldatum"), /* @__PURE__ */ React.createElement("input", { type: "date", value: gdIn, onChange: (e) => setGdIn(e.target.value), style: { ...inp, marginBottom: 14, colorScheme: "dark" } }), /* @__PURE__ */ React.createElement("div", { style: { ...sectionLbl, marginBottom: 4 } }, "Doelrate (g/week)"), /* @__PURE__ */ React.createElement("input", { type: "number", value: grIn, onChange: (e) => setGrIn(e.target.value), placeholder: "300", step: "50", style: inp }), /* @__PURE__ */ React.createElement("div", { style: { fontSize: 12, color: C.muted, marginTop: 8 } }, "Lean bulk: 200-300 g/w \xA0\xB7\xA0 Bulk: 300-500 g/w")), /* @__PURE__ */ React.createElement("button", { onClick: doSaveGoal, style: { background: C.blue, border: "none", borderRadius: 14, padding: "15px 0", color: "#fff", fontSize: 16, fontWeight: 700, width: "100%", cursor: "pointer", marginBottom: 10 } }, "Opslaan"), goalMsg && /* @__PURE__ */ React.createElement("div", { style: { textAlign: "center", color: C.green, fontSize: 14, fontWeight: 600, marginBottom: 12 } }, goalMsg), (goal.weight !== null || goal.date) && /* @__PURE__ */ React.createElement("div", { style: { background: C.card, borderRadius: 20, padding: "6px 18px" } }, /* @__PURE__ */ React.createElement("div", { style: { ...sectionLbl, padding: "14px 0 6px", marginBottom: 0 } }, "Huidig doel"), goal.weight !== null && /* @__PURE__ */ React.createElement("div", { style: goal.date ? row : rowL }, /* @__PURE__ */ React.createElement("span", { style: { color: C.sub } }, "Doelgewicht"), /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 600 } }, goal.weight, " kg")), goal.date && /* @__PURE__ */ React.createElement("div", { style: toGo !== null ? row : rowL }, /* @__PURE__ */ React.createElement("span", { style: { color: C.sub } }, "Datum"), /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 600 } }, fmtShort(goal.date), daysLeft !== null && /* @__PURE__ */ React.createElement("span", { style: { color: C.muted, fontWeight: 400, fontSize: 13 } }, " (", daysLeft > 0 ? `${daysLeft}d` : "verstreken", ")"))), toGo !== null && /* @__PURE__ */ React.createElement("div", { style: rowL }, /* @__PURE__ */ React.createElement("span", { style: { color: C.sub } }, "Nog te gaan"), /* @__PURE__ */ React.createElement("span", { style: { fontWeight: 600 } }, toGo > 0 ? "+" : "", toGo, " kg"))))), /* @__PURE__ */ React.createElement("div", { style: { position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 390, background: "rgba(18,18,18,0.95)", backdropFilter: "blur(24px)", borderTop: `1px solid ${C.sep}`, display: "flex", paddingBottom: "max(16px, env(safe-area-inset-bottom))" } }, TABS.map(({ k, label, Icon }) => /* @__PURE__ */ React.createElement(
+      "button",
+      {
+        key: k,
+        onClick: () => setTab(k),
+        style: { flex: 1, padding: "9px 0 3px", background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, color: tab === k ? C.blue : C.muted }
+      },
+      /* @__PURE__ */ React.createElement(Icon, null),
+      /* @__PURE__ */ React.createElement("span", { style: { fontSize: 10, fontWeight: tab === k ? 600 : 400, letterSpacing: 0.2 } }, label)
+    ))));
+  }
+  return __toCommonJS(entry_exports);
+})();
+
+</script>
+<script>
+  ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(WeightApp.default));
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('./sw.js').catch(function(){});
+    });
+  }
+</script>
+</body>
+</html>
